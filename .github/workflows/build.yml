@@ -1,0 +1,38 @@
+name: Build TrailerUtils x64
+
+on:
+  push:
+    branches: [ets2-1.62]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Compile Release x64
+        shell: powershell
+        run: .\Build.ps1 -NoInstall
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TrailerUtils-build-logs
+          path: |
+            artifacts/build.log
+            artifacts/build.binlog
+          if-no-files-found: ignore
+          retention-days: 3
+      - name: Upload test DLL
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TrailerUtils-ETS2-1.62-x64
+          path: artifacts/ETS2-TrailerUtil.dll
+          if-no-files-found: error
+          retention-days: 1
