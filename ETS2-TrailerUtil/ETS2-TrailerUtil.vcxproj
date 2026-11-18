@@ -69,7 +69,12 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Label="UserMacros">
+    <TrailerVulkanInclude Condition="'$(TrailerVulkanInclude)'==''">$(VULKAN_SDK)\Include</TrailerVulkanInclude>
+    <TrailerVulkanLib Condition="'$(TrailerVulkanLib)'==''">$(VULKAN_SDK)\Lib\vulkan-1.lib</TrailerVulkanLib>
+    <TrailerGlewInclude Condition="'$(TrailerGlewInclude)'==''">C:\OpenGL_SDK\glew\include</TrailerGlewInclude>
+    <TrailerGlewLib Condition="'$(TrailerGlewLib)'==''">C:\OpenGL_SDK\glew\lib\Release\x64\glew32s.lib</TrailerGlewLib>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -105,14 +110,15 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(solutiondir)Include;$(VULKAN_SDK)\Include;C:\OpenGL_SDK\glew\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(solutiondir)Include;$(TrailerVulkanInclude);$(TrailerGlewInclude);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <DelayLoadDLLs>vulkan-1.dll;opengl32.dll</DelayLoadDLLs>
-      <AdditionalDependencies>$(VULKAN_SDK)\Lib\vulkan-1.lib;C:\OpenGL_SDK\glew\lib\Release\x64\glew32s.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(TrailerVulkanLib);$(TrailerGlewLib);Delayimp.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     
   </ItemDefinitionGroup>
@@ -125,7 +131,8 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(solutiondir)Include;$(VULKAN_SDK)\Include;C:\OpenGL_SDK\glew\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(solutiondir)Include;$(TrailerVulkanInclude);$(TrailerGlewInclude);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
@@ -134,7 +141,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <DelayLoadDLLs>vulkan-1.dll;opengl32.dll</DelayLoadDLLs>
-      <AdditionalDependencies>$(VULKAN_SDK)\Lib\vulkan-1.lib;C:\OpenGL_SDK\glew\lib\Release\x64\glew32s.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(TrailerVulkanLib);$(TrailerGlewLib);Delayimp.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     
   </ItemDefinitionGroup>
