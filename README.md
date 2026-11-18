@@ -25,3 +25,9 @@ This branch targets the 1.62 layout, not older versions. The core signature and 
 ### Validation pending
 
 Compilation and runtime tests were not performed for this fork. Check menu rendering, no-trailer state, manual slider/axis/button steering, attach/detach, multiple trailers, and joint lock/unlock (PhysX only). Remove the DLL if the game becomes unstable. Do not use in TruckersMP.
+
+### Automated builds
+
+On Windows, double-click Build.bat or run `powershell -NoProfile -ExecutionPolicy Bypass -File .\Build.ps1` from the repository root. The script discovers VS 2022 C++ Build Tools, installs them if absent (administrator approval may be needed), waits for installation, fetches pinned vcpkg dependencies and rebuilds Release x64. A reboot may be required; in that case rerun after restarting. The resulting DLL and logs are in `artifacts/`. No files are copied to the game automatically.
+
+GitHub Actions: enable Actions on this fork if disabled, then push a change to `ets2-1.62` to start the Windows build. See the [Actions tab](https://github.com/TheNestorHD/TrailerUtils/actions). The test DLL is a short-lived build artifact (not a published release); logs are retained separately.
