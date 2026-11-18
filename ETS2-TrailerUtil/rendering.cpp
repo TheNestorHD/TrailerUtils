@@ -8,6 +8,8 @@ kiero::RenderType::Enum RenderManager::DetectRenderDevice()
         return kiero::RenderType::D3D11;
     }
 
+    if (GetModuleHandleA("d3d11.dll")) return kiero::RenderType::D3D11;
+
     HMODULE vulkan = GetModuleHandleA("vulkan-1.dll");
     if (vulkan) {
         return kiero::RenderType::Vulkan;

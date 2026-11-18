@@ -2,6 +2,7 @@
 
 #include <Windows.h>
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <thread>
 
@@ -37,6 +38,38 @@ std::vector<prism::game_trailer_actor_u*> temp_locked_trailers;
 
 uintptr_t game_ctrl_ptr;
 uint32_t game_actor_offset;
+constexpr uint32_t trailer_actor_offset = 0xC8;
+constexpr int max_trailers = 16;
+static uintptr_t advance_hook_address = 0;
+
+template<typename T>
+static T* read_pointer(uintptr_t address)
+{
+    if (!bmem::readable(address, sizeof(T*))) return nullptr;
+    return *reinterpret_cast<T**>(address);
+}
+
+static bool valid_trailer(prism::game_trailer_actor_u* trailer)
+{
+    const auto address = reinterpret_cast<uintptr_t>(trailer);
+    if (!address || address % alignof(void*) ||
+        !bmem::readable(address, sizeof(prism::game_trailer_actor_u))) return false;
+    const auto vtable = read_pointer<void>(address);
+    return bmem::isAddressValid(reinterpret_cast<uintptr_t>(vtable)) &&
+        std::isfinite(trailer->steering);
+}
+
+static prism::PxD6Joint* get_physx_joint(prism::game_trailer_actor_u* trailer)
+{
+    if (!valid_trailer(trailer)) return nullptr;
+    auto* joint = trailer->hook_joint;
+    if (!bmem::readable(reinterpret_cast<uintptr_t>(joint), 0x20) ||
+        joint->joint_type != prism::joint_type::six_dof) return nullptr;
+    auto* px = joint->physx_joint;
+    auto* table = read_pointer<void>(reinterpret_cast<uintptr_t>(px));
+    if (!bmem::readable(reinterpret_cast<uintptr_t>(table), 31 * sizeof(void*))) return nullptr;
+    return px;
+}
 
 bool is_fatal_error = false;
 std::string error = "";
@@ -155,7 +188,7 @@ bool isTrailerTempLocked(prism::game_trailer_actor_u* trailer)
 
 bool isTrailerSteerable(prism::game_trailer_actor_u* trailer)
 {
-    return trailer->steering_data != nullptr;
+    return valid_trailer(trailer) && bmem::readable(reinterpret_cast<uintptr_t>(trailer->steering_data), sizeof(prism::steering_data_t));
 }
 
 void render_error(std::string message) {
@@ -185,17 +218,17 @@ void render_fatal(std::string message) {
         render_error("Error: " + message);
         ImGui::Separator();
 
-        uint8_t* game_ctrl = *(uint8_t**)game_ctrl_ptr;
+        uint8_t* game_ctrl = read_pointer<uint8_t>(game_ctrl_ptr);
 
         ImGui::TextWrapped("game_ctrl_ptr: %p", game_ctrl_ptr);
         ImGui::TextWrapped("game_ctrl: %p", game_ctrl);
 
         if (game_ctrl) {
-            uint8_t* game_actor = *(uint8_t**)(game_ctrl + game_actor_offset);
+            uint8_t* game_actor = read_pointer<uint8_t>(reinterpret_cast<uintptr_t>(game_ctrl) + game_actor_offset);
             ImGui::TextWrapped("game_actor: %p", game_actor);
 
             if (game_actor) {
-                uint8_t* trailer_actor = *(uint8_t**)(game_actor + 0xc0);
+                uint8_t* trailer_actor = read_pointer<uint8_t>(reinterpret_cast<uintptr_t>(game_actor) + trailer_actor_offset);
                 ImGui::TextWrapped("trailer_actor: %p", trailer_actor);
 
 
@@ -600,21 +633,21 @@ void render_trailers()
     ImGui::Separator();
     ImGui::Spacing();
 
-    uint8_t* game_ctrl = *(uint8_t**)game_ctrl_ptr;
+    uint8_t* game_ctrl = read_pointer<uint8_t>(game_ctrl_ptr);
 
     if (game_ctrl)
     {
-        uint8_t* game_actor = *(uint8_t**)(game_ctrl + game_actor_offset);
+        uint8_t* game_actor = read_pointer<uint8_t>(reinterpret_cast<uintptr_t>(game_ctrl) + game_actor_offset);
         if (game_actor)
         {
-            prism::game_trailer_actor_u* trailer_actor = *(prism::game_trailer_actor_u**)(game_actor + 0xc8);
+            prism::game_trailer_actor_u* trailer_actor = read_pointer<prism::game_trailer_actor_u>(reinterpret_cast<uintptr_t>(game_actor) + trailer_actor_offset);
 
             if (trailer_actor)
             {
                 ImGui::Spacing();
 
                 int trailerIndex = 0;
-                while (trailer_actor != nullptr)
+                while (trailerIndex < max_trailers && valid_trailer(trailer_actor))
                 {
                     bool steerable = isTrailerSteerable(trailer_actor);
 
@@ -685,20 +718,13 @@ void render_trailers()
 
                         ImGui::Spacing();
 
-                        ImGui::Text("Suspention Height: ");
-                        ImGui::PushItemWidth(-1);
+                        ImGui::TextDisabled("Suspension adjustment unavailable in 1.62");
 
-                        ImGui::SliderFloat(("##Suspention" + std::to_string(trailerIndex)).c_str(), &trailer_actor->suspention_height, 0.25f, 5.f);
-                        ImGui::PopItemWidth();
-
-
-                        ImGui::Spacing();
-
-                        if (trailer_actor->hook_joint)
+                        if (auto* physx_joint = get_physx_joint(trailer_actor))
                         {
                             std::string joint = "unknown";
                             std::string btn_text = "Unsupported";
-                            switch (trailer_actor->hook_joint->physx_joint->GetMotion(prism::PxD6Axis::Enum::eTWIST))
+                            switch (physx_joint->GetMotion(prism::PxD6Axis::Enum::eTWIST))
                             {
                             case prism::PxD6Motion::Enum::eFREE:
                                 joint = "free";
@@ -719,11 +745,11 @@ void render_trailers()
                             {
                                 if (btn_text == "Lock")
                                 {
-                                    trailer_actor->hook_joint->physx_joint->SetMotion(prism::PxD6Axis::Enum::eTWIST, prism::PxD6Motion::Enum::eLOCKED);
+                                    physx_joint->SetMotion(prism::PxD6Axis::Enum::eTWIST, prism::PxD6Motion::Enum::eLOCKED);
                                 }
                                 else
                                 {
-                                    trailer_actor->hook_joint->physx_joint->SetMotion(prism::PxD6Axis::Enum::eTWIST, prism::PxD6Motion::Enum::eFREE);
+                                    physx_joint->SetMotion(prism::PxD6Axis::Enum::eTWIST, prism::PxD6Motion::Enum::eFREE);
                                 }
                             }
                         }
@@ -760,8 +786,8 @@ void render_about()
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::TextWrapped("Version: 1.0.5");
-    ImGui::TextWrapped("Supported Game Version: 1.60");
+    ImGui::TextWrapped("Version: 1.0.6-test");
+    ImGui::TextWrapped("Target Game Version: ETS2 1.62 (experimental)");
     ImGui::TextWrapped("Author: Baldy09");
 
     ImGui::Spacing(); ImGui::Spacing();
@@ -875,6 +901,7 @@ void dllmain::render_tick()
 
 void dllmain::main_tick()
 {
+    if (is_fatal_error || !advance_hook_address) return;
     // Update devices
     for (input_device& device : input_devices)
     {
@@ -939,22 +966,23 @@ void dllmain::main_tick()
     // Handle keybinds
     if (use_button_steering || use_axis_steering)
     {
-        uint8_t* game_ctrl = *(uint8_t**)game_ctrl_ptr;
+        uint8_t* game_ctrl = read_pointer<uint8_t>(game_ctrl_ptr);
 
         if (game_ctrl)
         {
-            uint8_t* game_actor = *(uint8_t**)(game_ctrl + game_actor_offset);
+            uint8_t* game_actor = read_pointer<uint8_t>(reinterpret_cast<uintptr_t>(game_ctrl) + game_actor_offset);
 
             if (game_actor)
             {
-                prism::game_trailer_actor_u* trailer_actor = *(prism::game_trailer_actor_u**)(game_actor + 0xC0);
+                prism::game_trailer_actor_u* trailer_actor = read_pointer<prism::game_trailer_actor_u>(reinterpret_cast<uintptr_t>(game_actor) + trailer_actor_offset);
                 if (trailer_actor)
                 {
                     int trailerIndex = 0;
-                    while (trailer_actor != nullptr)
+                    while (trailerIndex < max_trailers && valid_trailer(trailer_actor))
                     {
                         if (trailerIndex == current_controlled_trailer)
                         {
+                            if (!isTrailerSteerable(trailer_actor)) break;
                             if (use_button_steering && steer_button_device_index != -1)
                             {
                                 std::string pressed_key = get_next_button_input(steer_button_device_index);
@@ -1032,7 +1060,7 @@ void dllmain::main_tick()
 prism::g_advance_steering_t g_advance_steering_original;
 void g_advance_steering_hook(prism::game_trailer_actor_u* vehicle_actor)
 {
-    if (isTrailerLocked(vehicle_actor) || isTrailerTempLocked(vehicle_actor))
+    if (isTrailerSteerable(vehicle_actor) && (isTrailerLocked(vehicle_actor) || isTrailerTempLocked(vehicle_actor)))
     {
         prism::g_set_vehicle_steering(vehicle_actor->steering_data, vehicle_actor->steering);
         return;
@@ -1136,13 +1164,33 @@ SCSAPI_RESULT scs_telemetry_init(const scs_u32_t version, const scs_telemetry_in
         return SCS_RESULT_ok;
     }
     game_ctrl_ptr = bmem::relativeToAbsolute(game_ctrl_ptr_instruction, 3, 7);
+    if (!bmem::isAddressValid(game_ctrl_ptr) || !bmem::readable(game_ctrl_ptr, sizeof(void*)))
+    {
+        is_fatal_error = true;
+        error = "Resolved game_ctrl pointer is invalid";
+        scs_log(2, "%s", error.c_str());
+        return SCS_RESULT_ok;
+    }
     scs_log(0, "Found pointer to 'prism::game_ctrl' at: %p", game_ctrl_ptr);
 
 
     uintptr_t game_actor_offset_instruction = bmem::patternScan("4C 8B 81 ?? ?? ?? ?? 48 8B DA 4C 8B F1");
+    if (!bmem::isAddressValid(game_actor_offset_instruction))
+    {
+        is_fatal_error = true;
+        error = "Failed to find unique game_actor offset instruction";
+        scs_log(2, "%s", error.c_str());
+        return SCS_RESULT_ok;
+    }
     game_actor_offset = *reinterpret_cast<uint32_t*>(game_actor_offset_instruction + 3);
     scs_log(0, "Found 'game_ctrl->game_actor' offset ('%d')", game_actor_offset);
-    scs_log(0, "Found pointer to 'prism::game_actor' at: %p", *(uint8_t**)game_ctrl_ptr + game_actor_offset);
+    if (game_actor_offset == 0 || game_actor_offset > 0x10000)
+    {
+        is_fatal_error = true;
+        error = "Unexpected game_actor offset";
+        scs_log(2, "%s", error.c_str());
+        return SCS_RESULT_ok;
+    }
 
 
 
@@ -1160,7 +1208,7 @@ SCSAPI_RESULT scs_telemetry_init(const scs_u32_t version, const scs_telemetry_in
     prism::g_set_vehicle_steering = (prism::g_set_vehicle_steering_t)set_vehicle_steering_address;
 
 
-    uintptr_t advance_steering_address = bmem::patternScan("40 55 53 56 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B 91");
+    uintptr_t advance_steering_address = bmem::patternScan("48 8B C4 55 53 56 48 8D A8 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 80 B9 A9 0F 00 00 00 48 8B F1");
     if (!bmem::isAddressValid(advance_steering_address))
     {
         scs_log(2, "Failed to find the 'prism::g_advance_steering' function!");
@@ -1172,8 +1220,21 @@ SCSAPI_RESULT scs_telemetry_init(const scs_u32_t version, const scs_telemetry_in
     }
     scs_log(0, "Found 'prism::g_advance_steering' at: %p", advance_steering_address);
 
-    bmem::MH_Success(MH_CreateHook((LPVOID)advance_steering_address, g_advance_steering_hook, (LPVOID*)&g_advance_steering_original));
-    bmem::MH_Success(MH_EnableHook((LPVOID)advance_steering_address));
+    if (!bmem::MH_Success(MH_CreateHook((LPVOID)advance_steering_address, g_advance_steering_hook, (LPVOID*)&g_advance_steering_original)))
+    {
+        is_fatal_error = true;
+        error = "Steering hook creation failed";
+        return SCS_RESULT_ok;
+    }
+    if (!bmem::MH_Success(MH_EnableHook((LPVOID)advance_steering_address)))
+    {
+        MH_RemoveHook((LPVOID)advance_steering_address);
+        is_fatal_error = true;
+        error = "Steering hook activation failed";
+        return SCS_RESULT_ok;
+    }
+    advance_hook_address = advance_steering_address;
+    scs_log(0, "Matched game profile: ETS2 1.62 (experimental)");
 
     dinput_manager::InitDirectInput();
     for (auto& device : dinput_manager::GetInputDevices())
@@ -1246,6 +1307,12 @@ SCSAPI_RESULT scs_telemetry_init(const scs_u32_t version, const scs_telemetry_in
 #pragma comment( linker, "/export:scs_telemetry_shutdown=scs_telemetry_shutdown" )
 SCSAPI_VOID scs_telemetry_shutdown()
 {
+    if (advance_hook_address)
+    {
+        MH_DisableHook((LPVOID)advance_hook_address);
+        MH_RemoveHook((LPVOID)advance_hook_address);
+        advance_hook_address = 0;
+    }
     dinput_manager::ShutdownDirectInput();
 
     delete renderer;

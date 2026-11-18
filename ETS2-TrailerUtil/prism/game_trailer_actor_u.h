@@ -14,23 +14,18 @@ namespace prism
 	};
 	static_assert(sizeof(steering_data_t) == 0x48);
 
-	class game_trailer_actor_u : public unit_t // Size: 0x4288
+	// Partial 1.62 layout; the full engine object size is not known.
+	class game_trailer_actor_u : public unit_t
 	{
 	public:
-		char pad_0010[488]; //0x0010 (0x1e8)
-		class vehicle_u* vehicle; //0x01F8 (0x08)
-		char pad_0200[720]; //0x0200 (0x2d0)
-		float suspention_height; //0x04D0 (0x04)
-		char pad_04D4[364]; //0x04D4 (0x16c)
-		float steering; //0x0640 (0x04)
-		char pad_0644[4]; //0x0644 (0x04)
-		class steering_data_t* steering_data; //0x0648 (0x08)
-		char pad_0650[2328]; //0x0650 (0x918)
-		class physics_joint_physx_t* hook_joint; //0x0F68 (0x08) exists when attached
-		char pad_0F70[160]; //0x0F70 (0xa0)
-		game_trailer_actor_u* slave; //0x1010 (0x08)
-		char pad_1018[12912]; //0x1018 (0x3270)
+		char pad_0010[0x6B8 - 0x10];
+		float steering;                          // 0x06B8
+		char pad_06BC[4];
+		steering_data_t* steering_data;           // 0x06C0
+		char pad_06C8[0xFB0 - 0x6C8];
+		physics_joint_physx_t* hook_joint;        // 0x0FB0
+		char pad_0FB8[0x1058 - 0xFB8];
+		game_trailer_actor_u* slave;              // 0x1058 (candidate)
 	};
-	static_assert(sizeof(game_trailer_actor_u) == 0x4288);
 }
 #pragma pack(pop)

@@ -4,6 +4,8 @@
 #include <string>
 #include <sstream>
 #include <vector>
+#include <cstring>
+#include <Windows.h>
 
 #include <MinHook/MinHook.h>
 
@@ -60,88 +62,75 @@ namespace bmem
 
 
 
+	// A successful check is not proof of object identity or lifetime.
+	static bool readable(uintptr_t address, size_t bytes)
+	{
+		if (!address || !bytes || address + bytes < address) return false;
+		const uintptr_t end = address + bytes;
+		while (address < end)
+		{
+			MEMORY_BASIC_INFORMATION mbi{};
+			if (!VirtualQuery(reinterpret_cast<const void*>(address), &mbi, sizeof(mbi))) return false;
+			const DWORD p = mbi.Protect & 0xff;
+			if (mbi.State != MEM_COMMIT || (mbi.Protect & PAGE_GUARD) ||
+				(p != PAGE_READONLY && p != PAGE_READWRITE && p != PAGE_WRITECOPY &&
+				 p != PAGE_EXECUTE_READ && p != PAGE_EXECUTE_READWRITE && p != PAGE_EXECUTE_WRITECOPY))
+				return false;
+			const auto next = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+			if (next <= address) return false;
+			address = next;
+		}
+		return true;
+	}
+
 	static uintptr_t patternScan(const char* patternSTR, const char* moduleToSet = "current")
 	{
-		if (!setModule(moduleToSet))
-		{
-			return 0;
-		}
-
+		if (!setModule(moduleToSet)) return 0;
 		std::vector<pattern_byte> pattern;
-
 		std::istringstream stream(patternSTR);
 		std::string token;
-		while (stream >> token) {
-			pattern_byte pbyte;
-
-			if (token == "??" || token == "?") {
-				pbyte.ignore = true;
-			}
-			else 
+		while (stream >> token)
+		{
+			pattern_byte pbyte{};
+			pbyte.ignore = token == "?" || token == "??";
+			if (!pbyte.ignore)
 			{
-				if (token.length() > 2 || token.length() < 2)
-				{
-					return 0;
-				}
-
-				pbyte.ignore = false;
-
-				unsigned int byte;
+				if (token.size() != 2 || token.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) return 0;
+				unsigned int byte = 0;
 				std::istringstream(token) >> std::hex >> byte;
-				pbyte.byte = (uint8_t)byte;
+				pbyte.byte = static_cast<uint8_t>(byte);
 			}
-
 			pattern.push_back(pbyte);
 		}
-
-
-		if (pattern[0].ignore)
+		if (pattern.empty() || pattern.front().ignore) return 0;
+		const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(moduleBase);
+		const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(moduleBase + dos->e_lfanew);
+		const auto* section = IMAGE_FIRST_SECTION(nt);
+		uintptr_t match = 0;
+		for (unsigned int s = 0; s < nt->FileHeader.NumberOfSections; ++s, ++section)
 		{
-			return 0;
-		}
-
-
-		bool foundFirstByte = false;
-		int patternIndex = 0;
-		uintptr_t patternStart = 0;
-		for (uint64_t i = 0; i < moduleSize; i++)
-		{
-			uintptr_t currentAddress = moduleBase+i;
-			uint8_t currentByte = *reinterpret_cast<uint8_t*>(currentAddress);
-			
-			if (!foundFirstByte)
+			if (!(section->Characteristics & IMAGE_SCN_MEM_EXECUTE)) continue;
+			const auto rva = section->VirtualAddress;
+			const auto size = section->Misc.VirtualSize;
+			if (rva >= moduleSize || size > moduleSize - rva || size < pattern.size()) continue;
+			const auto address = moduleBase + rva;
+			if (!readable(address, size)) continue;
+			const auto* data = reinterpret_cast<const uint8_t*>(address);
+			for (size_t i = 0; i <= size - pattern.size(); ++i)
 			{
-				if (currentByte == pattern[patternIndex].byte)
+				if (data[i] != pattern.front().byte) continue;
+				size_t j = 1;
+				while (j < pattern.size() && (pattern[j].ignore || data[i+j] == pattern[j].byte)) ++j;
+				if (j != pattern.size()) continue;
+				if (match)
 				{
-					patternStart = currentAddress;
-					patternIndex++;
-					foundFirstByte = true;
+					scs_log(2, "Ambiguous signature: %s", patternSTR);
+					return 0;
 				}
-			}
-			else
-			{
-				if (currentByte == pattern[patternIndex].byte) {
-					patternIndex++;
-				}
-				else if (pattern[patternIndex].ignore)
-				{
-					patternIndex++;
-				}
-				else
-				{
-					patternStart = 0;
-					patternIndex = 0;
-					foundFirstByte = false;
-				}
-
-				if (patternIndex == pattern.size())
-				{
-					break;
-				}
+				match = address + i;
 			}
 		}
-
-		return patternStart;
+		return match;
 	}
 
 
@@ -153,7 +142,7 @@ namespace bmem
 	
 	static bool isAddressValid(uintptr_t address, const char* moduleToSet = "current")
 	{
-		if (address > moduleBase + moduleSize)
+		if (!moduleBase || address >= moduleBase + moduleSize)
 			return false;
 
 		if (address < moduleBase)
