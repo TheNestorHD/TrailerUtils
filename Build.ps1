@@ -53,6 +53,7 @@ if (-not (Test-Path (Join-Path $vcpkg '.git'))) {
 }
 $actual = (& $gitPath -C $vcpkg rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $actual -ne $revision) { throw "Unexpected vcpkg revision: $actual" }
+$env:PATH = (Split-Path -Parent $gitPath) + ';' + $env:PATH
 $env:VCPKG_ROOT = $vcpkg
 $env:VCPKG_DISABLE_METRICS = '1'
 $vcpkgExe = Join-Path $vcpkg 'vcpkg.exe'
@@ -76,11 +77,11 @@ $dll = Join-Path $out 'ETS2-TrailerUtil.dll'
 if (Test-Path $dll) { Remove-Item $dll -Force }
 $log = Join-Path $out 'build.log'
 $binlog = Join-Path $out 'build.binlog'
-$args = @(
+$buildArgs = @(
     (Join-Path $root 'ETS2-TrailerUtil.sln'),
     '/t:Rebuild','/m','/p:Configuration=Release','/p:Platform=x64',
     '/p:VcpkgEnabled=false',
-    "/p:OutDir=$out\",
+    "/p:OutDir=$out/",
     "/p:TrailerVulkanInclude=$vkRoot\include",
     "/p:TrailerVulkanLib=$vk",
     "/p:TrailerGlewInclude=$glewRoot\include",
@@ -88,7 +89,7 @@ $args = @(
     '/fl', "/flp:LogFile=$log;Verbosity=normal", "/bl:$binlog"
 )
 Write-Host 'Building Release x64...'
-Invoke-Native $msbuild $args
+Invoke-Native $msbuild $buildArgs
 if (-not (Test-Path $dll)) { throw "Expected output missing: $dll" }
 Write-Host "Build complete: $dll" -ForegroundColor Green
 Get-FileHash $dll -Algorithm SHA256
