@@ -7,6 +7,7 @@
 #include <assert.h>
 
 #include "win32_impl.h"
+#include "../../scs_logging.h"
 
 #include "../imgui.h"
 #include "../imgui_impl_win32.h"
@@ -23,6 +24,11 @@ long __stdcall hkPresent11(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT F
 {
     if (!init)
     {
+        static bool first_frame_logged = false;
+        if (!first_frame_logged) {
+            scs_logging::scs_log(0, "[Render] DX11 Present reached");
+            first_frame_logged = true;
+        }
         DXGI_SWAP_CHAIN_DESC desc;
         pSwapChain->GetDesc(&desc);
 
@@ -48,6 +54,7 @@ long __stdcall hkPresent11(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT F
         io.FontDefault = defaultFont;
 
         init = true;
+        scs_logging::scs_log(0, "[Render] ImGui DX11 initialized");
     }
 
     ImGui_ImplDX11_NewFrame();
@@ -69,11 +76,14 @@ long __stdcall hkPresent11(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT F
 
 void impl::d3d11::init()
 {
-	kiero::bind(8, (void**)&oPresent, hkPresent11);
+	const auto status = kiero::bind(8, (void**)&oPresent, hkPresent11);
+    scs_logging::scs_log(status == kiero::Status::Success ? 0 : 2,
+        "[Render] DX11 Present hook status: %d", static_cast<int>(status));
 }
 
 void impl::d3d11::shutdown()
 {
+    if (!init) { kiero::unbind(8); return; }
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
 
@@ -84,6 +94,10 @@ void impl::d3d11::shutdown()
     if (device) device->Release();
 
     kiero::unbind(8);
+    mainRenderTargetView = nullptr;
+    context = nullptr;
+    device = nullptr;
+    init = false;
 }
 
 #endif // KIERO_INCLUDE_D3D11
