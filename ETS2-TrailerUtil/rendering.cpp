@@ -1,4 +1,5 @@
 #include "rendering.h"
+#include "scs_logging.h"
 #include "imgui/impl/win32_impl.h"
 
 kiero::RenderType::Enum RenderManager::DetectRenderDevice()
@@ -36,7 +37,13 @@ RenderManager::RenderManager(kiero::RenderType::Enum rendering_api)
     else
         render_device = rendering_api;
 
-    kiero::init(render_device);
+    const auto status = kiero::init(render_device);
+    scs_logging::scs_log(status == kiero::Status::Success ? 0 : 2,
+        "[Render] Kiero initialization: %d (requested renderer %d)", static_cast<int>(status), static_cast<int>(render_device));
+    if (status != kiero::Status::Success) {
+        render_device = kiero::RenderType::None;
+        return;
+    }
 
     switch (render_device)
     {
@@ -51,6 +58,7 @@ RenderManager::RenderManager(kiero::RenderType::Enum rendering_api)
 
 RenderManager::~RenderManager()
 {
+    if (render_device == kiero::RenderType::None) return;
     switch (render_device)
     {
         case kiero::RenderType::D3D11: impl::d3d11::shutdown(); break;
