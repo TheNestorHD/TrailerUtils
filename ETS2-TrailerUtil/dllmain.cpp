@@ -1151,7 +1151,13 @@ SCSAPI_RESULT scs_telemetry_init(const scs_u32_t version, const scs_telemetry_in
         break;
     }
 
-    scs_log(0, "Hooked!");
+    if (renderer->GetRenderDevice() == kiero::RenderType::None) {
+        is_fatal_error = true;
+        error = "Rendering initialization failed";
+        scs_log(2, "%s", error.c_str());
+        return SCS_RESULT_ok;
+    }
+    scs_log(0, "Render initialization returned; waiting for first frame");
 
     uintptr_t game_ctrl_ptr_instruction = bmem::patternScan("48 8B 0D ?? ?? ?? ?? 0F 57 C0 48 8B D0");
     if (!bmem::isAddressValid(game_ctrl_ptr_instruction))
@@ -1299,6 +1305,8 @@ SCSAPI_RESULT scs_telemetry_init(const scs_u32_t version, const scs_telemetry_in
     }
     scs_log(0, "Done");
 
+    scs_log(0, "Settings: axis_enabled=%d device=%d axis=%s trailer=%d",
+        static_cast<int>(use_axis_steering), axis_device_index, steering_axis_name.c_str(), current_controlled_trailer);
     scs_log(0, "Plugin Loaded");
 
     return SCS_RESULT_ok;
