@@ -16,13 +16,13 @@
 typedef long(__stdcall* Present)(IDXGISwapChain*, UINT, UINT);
 static Present oPresent = NULL;
 
-static bool init = false;
+static bool imgui_initialized = false;
 static ID3D11RenderTargetView* mainRenderTargetView = nullptr;
 static ID3D11Device* device = nullptr;
 static ID3D11DeviceContext* context = nullptr;
 long __stdcall hkPresent11(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Flags)
 {
-    if (!init)
+    if (!imgui_initialized)
     {
         static bool first_frame_logged = false;
         if (!first_frame_logged) {
@@ -53,7 +53,7 @@ long __stdcall hkPresent11(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT F
         io.Fonts->Build();
         io.FontDefault = defaultFont;
 
-        init = true;
+        imgui_initialized = true;
         scs_logging::scs_log(0, "[Render] ImGui DX11 initialized");
     }
 
@@ -83,7 +83,7 @@ void impl::d3d11::init()
 
 void impl::d3d11::shutdown()
 {
-    if (!init) { kiero::unbind(8); return; }
+    if (!imgui_initialized) { kiero::unbind(8); return; }
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
 
@@ -97,7 +97,7 @@ void impl::d3d11::shutdown()
     mainRenderTargetView = nullptr;
     context = nullptr;
     device = nullptr;
-    init = false;
+    imgui_initialized = false;
 }
 
 #endif // KIERO_INCLUDE_D3D11
